@@ -1,0 +1,45 @@
+name: nightly-scan
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # daily at 08:00 UTC
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo (personalize branch)
+        uses: actions/checkout@v4
+        with:
+          ref: personalize/marketing-searches
+          persist-credentials: true  # allow pushes using GITHUB_TOKEN
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      - name: Run scanner (discovery + verify)
+        run: node scan.mjs --verify
+
+      - name: Commit results back (automated/scans)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "actions@github.com"
+          git checkout -B automated/scans
+          git add data/pipeline.md data/scan-history.tsv || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "ci: nightly scan results $(date -u +'%Y-%m-%d')"
+            git push -u origin automated/scans --force
+          fi
